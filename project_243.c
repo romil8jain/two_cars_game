@@ -1,19 +1,35 @@
 #include <stdbool.h>
 #include <stdlib.h>
 volatile int pixel_buffer_start; // global variable
+#define NO_POS -1
+
+typedef struct Position{
+    int x_pos;
+    int y_pos;
+} position;
+
 
 void clear_screen();
-void draw_background();
+void draw_background(int x_start, int x_end, int y_start, int y_end, short int colour);
 void draw_title();
 void draw_title_screen_instruction();
 void draw_red_car();
 void draw_blue_car();
+void draw_blue_circle(int x1, int y1);
+void draw_blue_square(int x1, int y1);
+void check_blue_bounds(position * blue_squares,position * blue_circles);
+void check_red_bounds(position * red_squares,position * red_circles);
+void erase_blue(position * blue_squares,position * blue_circles);
+void erase_red(position * red_squares,position * red_circles);
 void draw_line(int x0, int y0, int x1, int y1, short int colour);
 void swap (int* a, int* b);
 void wait_for_vsync();
 void plot_pixel(int x, int y, short int line_color);
 void checkBounds(int x_box, int y_box, int *dx_box, int *dy_box);
 void draw_rectangle(int x_box, int y_box, short int colour_box);
+void move_blue_random(bool generate, position *blue_squares, position *blue_circles);
+void move_red_random(bool generate, position *red_squares, position *red_circles);
+void set_initial_positions(position * blue_squares, position * blue_circles, position * red_squares, position * red_circles);
 
 short int two_cars_title[13536];
 short int red_car [2880];
@@ -22,22 +38,14 @@ short int blue_circle [1920];
 short int blue_square [1920];
 short int red_circle [1920];
 short int red_square [1920];
- 
-//default positions of the cars in the respective lanes
-short int red_left;
-short int red_right;
-short int blue_left;
-short int blue_right;
 
 
 int main(void)
 {
     volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
 
-
     // declare other variables(not shown)
     // initialize location and direction of rectangles(not shown)
-	
 
 
     /* set front pixel buffer to start of FPGA On-chip memory */
@@ -52,18 +60,67 @@ int main(void)
     *(pixel_ctrl_ptr + 1) = 0xC0000000;
     pixel_buffer_start = *(pixel_ctrl_ptr + 1); // we draw on the back buffer
 
+    //max number of objects of every type will be 4
+    
+    position blue_squares[4];
+    position blue_circles[4];
+    position red_squares[4];
+    position red_circles[4];
+    set_initial_positions(blue_squares, blue_circles, red_squares, red_circles);
+
+
+    int wait_time = 0;
+    //make sure to draw background once on both front and back buffers
     while (1)
     {
-        draw_background();
-        draw_title();
-        draw_title_screen_instruction();
-        draw_red_car();
-        draw_blue_car();
+        if(wait_time <= 1){
+            draw_background(0, 320, 0, 240, 0x0824);
+            draw_title();
+            draw_title_screen_instruction();
+        }
+        else if(wait_time < 20){
+			plot_pixel(319, 239, 0x0824);
+		}
+        
+
+        if(wait_time == 20 || wait_time == 21){
+            draw_background(0, 320, 0, 240, 0x29af);
+        }
+        else if(wait_time > 21){
+            plot_pixel(319, 239, 0x29af);
+        }
+
+        if(wait_time > 21 && wait_time % 80 == 0){
+            move_blue_random(true, blue_squares, blue_circles); 
+        }
+
+        if(wait_time > 21){
+            erase_blue(blue_squares, blue_circles);
+            move_blue_random(false, blue_squares, blue_circles); 
+        }
+
+        if((wait_time-13) > 21 && (wait_time-13) % 80 == 0){
+            move_red_random(true, red_squares, red_circles); 
+        }
+
+        if((wait_time-13) > 21){
+            erase_red(red_squares, red_circles);
+            move_red_random(false, red_squares, red_circles); 
+        }
+        
+        //int repeat_clear_outside_bounds = CLEAR_0;
+        check_blue_bounds(blue_squares, blue_circles);
+        check_red_bounds(red_squares, red_circles);
+
+        if(wait_time > 21){
+            draw_red_car();
+            draw_blue_car();
+        }
 
 
+        wait_time++;
         wait_for_vsync(); // swap front and back buffers on VGA vertical sync
         pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
-        break;
     }
 }
 
@@ -90,13 +147,301 @@ void draw_title_screen_instruction(){
     *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x79;
 }
 
-void draw_background(){
-    for (int x = 0; x <= 319; x++){
-        for(int y = 0; y <= 239; y++){
+void erase_blue(position * blue_squares,position * blue_circles){
+    int i = 0;
+
+    for(i = 0; i <4; i++){
+
+        if((*(blue_squares + i)).y_pos >= 2){
+            draw_background((*(blue_squares + i)).x_pos, ((*(blue_squares + i)).x_pos) + 30,
+                            ((*(blue_squares + i)).y_pos)-2, ((*(blue_squares + i)).y_pos)+30, 0x29af);
+        }
+
+        if((*(blue_circles + i)).y_pos >= 2){
+            draw_background((*(blue_circles + i)).x_pos, ((*(blue_circles + i)).x_pos) + 30,
+                            ((*(blue_circles + i)).y_pos) - 2, ((*(blue_circles + i)).y_pos) + 30, 0x29af);
+        }
+    }
+}
+
+void erase_red(position * red_squares,position * red_circles){
+    int i = 0;
+
+    for(i = 0; i <4; i++){
+
+        if((*(red_squares + i)).y_pos >= 2){
+            draw_background((*(red_squares + i)).x_pos, ((*(red_squares + i)).x_pos) + 30,
+                            ((*(red_squares + i)).y_pos)-2, ((*(red_squares + i)).y_pos)+30, 0x29af);
+        }
+
+        if((*(red_circles + i)).y_pos >= 2){
+            draw_background((*(red_circles + i)).x_pos, ((*(red_circles + i)).x_pos) + 30,
+                            ((*(red_circles + i)).y_pos) - 2, ((*(red_circles + i)).y_pos) + 30, 0x29af);
+        }
+    }
+}
+
+void set_initial_positions(position* blue_squares, position* blue_circles,position*  red_squares,position*  red_circles){
+    for(int i=0; i<4; i++){
+        (*(blue_squares+i)).x_pos = NO_POS;
+        (*(blue_squares+i)).y_pos = NO_POS;
+        (*(blue_circles+i)).y_pos = NO_POS;
+        (*(blue_circles+i)).x_pos = NO_POS;
+        (*(red_circles+i)).x_pos = NO_POS;
+        (*(red_circles+i)).y_pos = NO_POS;
+        (*(red_squares+i)).x_pos = NO_POS;
+        (*(red_squares+i)).y_pos = NO_POS;
+
+    }
+}
+
+void check_blue_bounds(position * blue_squares, position * blue_circles){
+    int i = 0;
+    for(i = 0; i <4; i++){
+
+        if((*(blue_squares + i)).y_pos >= 206){
+            draw_background((*(blue_squares + i)).x_pos, ((*(blue_squares + i)).x_pos) + 30,
+                            ((*(blue_squares + i)).y_pos), ((*(blue_squares + i)).y_pos)+32, 0x29af);
+            if((*(blue_squares + i)).y_pos == 207){
+                (*(blue_squares + i)).x_pos = NO_POS;
+                (*(blue_squares + i)).y_pos = NO_POS;
+            }
+        }
+
+        if((*(blue_circles + i)).y_pos >= 206){
+            draw_background((*(blue_circles + i)).x_pos, ((*(blue_circles + i)).x_pos) + 30,
+                            ((*(blue_circles + i)).y_pos), ((*(blue_circles + i)).y_pos)+32, 0x29af);
+            if((*(blue_circles + i)).y_pos == 207){
+                (*(blue_circles + i)).x_pos = NO_POS;
+                (*(blue_circles + i)).y_pos = NO_POS;
+            }
+        }
+    }
+}
+
+void move_red_random(bool generate, position* red_squares, position* red_circles){
+    
+    if(generate == true){
+        int what_to_draw = rand()%2; //circle or square
+        int where_to_draw = rand()%2; //left or right lane
+
+        if(what_to_draw == 0 && where_to_draw == 0){
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(red_circles + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(red_circles + i)).x_pos = 25;
+            (*(red_circles + i)).y_pos = 0;
+            //draw_red_circle(185, 0);
+        }
+
+        else if(what_to_draw == 0 && where_to_draw == 1){
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(red_circles + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(red_circles + i)).x_pos = 105;
+            (*(red_circles + i)).y_pos = 0;
+            //draw_red_circle(265, 0);
+        }
+
+        else if(what_to_draw == 1 && where_to_draw == 0){
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(red_squares + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(red_squares + i)).x_pos = 25;
+            (*(red_squares + i)).y_pos = 0;
+            //draw_red_square(185, 0);
+        }
+
+        else{
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(red_squares + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(red_squares + i)).x_pos = 105;
+            (*(red_squares + i)).y_pos = 0;
+            //draw_red_square(265, 0);
+        }
+    }
+    else{
+        int i = 0;
+        for(i = 0; i <4; i++){
+
+            if((*(red_squares + i)).y_pos != NO_POS){
+                (*(red_squares + i)).y_pos++;
+                draw_red_square((*(red_squares + i)).x_pos, (*(red_squares + i)).y_pos);
+            }
+
+            if((*(red_circles + i)).y_pos != NO_POS){
+                (*(red_circles + i)).y_pos++;
+                draw_red_circle((*(red_circles + i)).x_pos, (*(red_circles + i)).y_pos);
+            }
+        }
+    }
+}
+
+
+
+void check_red_bounds(position * red_squares, position * red_circles){
+    int i = 0;
+    for(i = 0; i <4; i++){
+
+        if((*(red_squares + i)).y_pos >= 206){
+            draw_background((*(red_squares + i)).x_pos, ((*(red_squares + i)).x_pos) + 30,
+                            ((*(red_squares + i)).y_pos), ((*(red_squares + i)).y_pos)+32, 0x29af);
+            if((*(red_squares + i)).y_pos == 207){
+                (*(red_squares + i)).x_pos = NO_POS;
+                (*(red_squares + i)).y_pos = NO_POS;
+            }
+        }
+
+        if((*(red_circles + i)).y_pos >= 206){
+            draw_background((*(red_circles + i)).x_pos, ((*(red_circles + i)).x_pos) + 30,
+                            ((*(red_circles + i)).y_pos), ((*(red_circles + i)).y_pos)+32, 0x29af);
+            if((*(red_circles + i)).y_pos == 207){
+                (*(red_circles + i)).x_pos = NO_POS;
+                (*(red_circles + i)).y_pos = NO_POS;
+            }
+        }
+    }
+}
+
+void move_blue_random(bool generate, position* blue_squares, position* blue_circles){
+    
+    if(generate == true){
+        int what_to_draw = rand()%2; //circle or square
+        int where_to_draw = rand()%2; //left or right lane
+
+        if(what_to_draw == 0 && where_to_draw == 0){
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(blue_circles + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(blue_circles + i)).x_pos = 185;
+            (*(blue_circles + i)).y_pos = 0;
+            //draw_blue_circle(185, 0);
+        }
+
+        else if(what_to_draw == 0 && where_to_draw == 1){
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(blue_circles + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(blue_circles + i)).x_pos = 265;
+            (*(blue_circles + i)).y_pos = 0;
+            //draw_blue_circle(265, 0);
+        }
+
+        else if(what_to_draw == 1 && where_to_draw == 0){
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(blue_squares + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(blue_squares + i)).x_pos = 185;
+            (*(blue_squares + i)).y_pos = 0;
+            //draw_blue_square(185, 0);
+        }
+
+        else{
+            int i = 0;
+            for(i = 0; i <4; i++){
+
+                if((*(blue_squares + i)).x_pos == NO_POS){
+                    break;
+                }
+            }
+            (*(blue_squares + i)).x_pos = 265;
+            (*(blue_squares + i)).y_pos = 0;
+            //draw_blue_square(265, 0);
+        }
+    }
+    else{
+        int i = 0;
+        for(i = 0; i <4; i++){
+
+            if((*(blue_squares + i)).y_pos != NO_POS){
+                (*(blue_squares + i)).y_pos++;
+                draw_blue_square((*(blue_squares + i)).x_pos, (*(blue_squares + i)).y_pos);
+            }
+
+            if((*(blue_circles + i)).y_pos != NO_POS){
+                (*(blue_circles + i)).y_pos++;
+                draw_blue_circle((*(blue_circles + i)).x_pos, (*(blue_circles + i)).y_pos);
+            }
+        }
+    }
+}
+
+void draw_blue_circle(int x1, int y1){
+    int i = 0;
+    for(int y = y1; y < (y1+32); y++){
+        for (int x = x1; x < (x1+30); x++){
+            plot_pixel(x, y, (blue_circle[i] | blue_circle[i+1] << 8));
+            i+=2;
+        }
+    }
+}
+
+void draw_blue_square(int x1, int y1){
+    int i = 0;
+    for(int y = y1; y < (y1+32); y++){
+        for (int x = x1; x < (x1+30); x++){
+            plot_pixel(x, y, (blue_square[i] | blue_square[i+1] << 8));
+            i+=2;
+        }
+    }
+}
+
+void draw_red_circle(int x1, int y1){
+    int i = 0;
+    for(int y = y1; y < (y1+32); y++){
+        for (int x = x1; x < (x1+30); x++){
+            plot_pixel(x, y, (red_circle[i] | red_circle[i+1] << 8));
+            i+=2;
+        }
+    }
+}
+
+void draw_red_square(int x1, int y1){
+    int i = 0;
+    for(int y = y1; y < (y1+32); y++){
+        for (int x = x1; x < (x1+30); x++){
+            plot_pixel(x, y, (red_square[i] | red_square[i+1] << 8));
+            i+=2;
+        }
+    }
+}
+
+void draw_background(int x_start, int x_end, int y_start, int y_end, short int colour){
+    for (int x = x_start; x < x_end; x++){
+        for(int y = y_start; y < y_end; y++){
             if((x >= 77 && x <= 80) ||  (x >= 154 && x <= 163) || (x >= 237 && x <= 240))
             plot_pixel(x, y, 0xF47E);
             else{
-                plot_pixel(x, y, 0x0824);
+                plot_pixel(x, y, colour);
             }
         }
     }
@@ -118,7 +463,7 @@ void draw_blue_car(){
         for (int x = 262; x < 298; x++){
             plot_pixel(x, y, (blue_car[i] | blue_car[i+1] << 8));
             i+=2;
-        }  
+        }
     }
 }
 
@@ -213,6 +558,7 @@ void wait_for_vsync(){
     while((status & 0x01)!=0){
         status = *(pixel_ctrl_ptr +3);
     }
+
 }
 
 
@@ -229,79 +575,80 @@ void checkBounds(int x_box, int y_box, int *dx_box, int *dy_box){
         *dy_box = *dy_box * -1;
     }
 }
-//to check if the car can move any further left 
-bool position_left(int x){
-	if(x==car_left)
-		return true;
-	else 
-		return false;
-}
-//to move the car right
-void move_car_right(float dx, int *car){
-	if(position_left){
-		current_position=car_right;
-	}
-	else 
-		return();
-}
-//to move the car left
-void move_car_left(float dx, int *car){
-	if(!position_left){
-		current_position=car_left;
-	}
-	else   
-		return();
-}
-//
-int floor(const float input){
-	return int(input - input%1);
-}
-// 
-void move_car()
-{
-    if (car_red)
-    {
-        if (turn_left) // wants to go turn_left
-        {
-            if (x == default_car_red_position_left) // is already left
-            {
-                return;
-            }
 
-            // turn left its in the right position
-        }
-        else // wants to go turn_right
-        {
-            if (x == default_car_red_position_right) // is already right
-            {
-                return;
-            }
+// //to check if the car can move any further left 
+// bool position_left(int x){
+// 	if(x==car_left)
+// 		return true;
+// 	else 
+// 		return false;
+// }
+// //to move the car right
+// void move_car_right(float dx, int *car){
+// 	if(position_left){
+// 		current_position=car_right;
+// 	}
+// 	else 
+// 		return();
+// }
+// //to move the car left
+// void move_car_left(float dx, int *car){
+// 	if(!position_left){
+// 		current_position=car_left;
+// 	}
+// 	else   
+// 		return();
+// }
+// //
+// int floor(const float input){
+// 	return int(input - input%1);
+// }
+// // 
+// void move_car()
+// {
+//     if (car_red)
+//     {
+//         if (turn_left) // wants to go turn_left
+//         {
+//             if (x == default_car_red_position_left) // is already left
+//             {
+//                 return;
+//             }
 
-            // turn right its in the left position
-        }
-    }
-    else // car_blue
-    {
-        if (turn_left) // wants to go turn_left
-        {
-            if (x == default_car_blue_position_left) // is already left
-            {
-                return;
-            }
+//             // turn left its in the right position
+//         }
+//         else // wants to go turn_right
+//         {
+//             if (x == default_car_red_position_right) // is already right
+//             {
+//                 return;
+//             }
 
-            // turn left its in the right position
-        }
-        else // wants to go turn_right
-        {
-            if (x == default_car_blue_position_right) // is already right
-            {
-                return;
-            }
+//             // turn right its in the left position
+//         }
+//     }
+//     else // car_blue
+//     {
+//         if (turn_left) // wants to go turn_left
+//         {
+//             if (x == default_car_blue_position_left) // is already left
+//             {
+//                 return;
+//             }
 
-            // turn right its in the left position
-        }
-    }
-}
+//             // turn left its in the right position
+//         }
+//         else // wants to go turn_right
+//         {
+//             if (x == default_car_blue_position_right) // is already right
+//             {
+//                 return;
+//             }
+
+//             // turn right its in the left position
+//         }
+//     }
+// }
 
 /*for(int i = 0; i < car_width; ++i)
             {
