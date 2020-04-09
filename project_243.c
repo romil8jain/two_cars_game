@@ -231,7 +231,7 @@ void checkBounds(int x_box, int y_box, int *dx_box, int *dy_box){
 }
 //to check if the car can move any further left 
 bool position_left(int x){
-	if(x=car_left)
+	if(x==car_left)
 		return true;
 	else 
 		return false;
@@ -252,6 +252,74 @@ void move_car_left(float dx, int *car){
 	else   
 		return();
 }
+//
+int floor(const float input){
+	return int(input - input%1);
+}
+// 
+void move_car()
+{
+    if (car_red)
+    {
+        if (turn_left) // wants to go turn_left
+        {
+            if (x == default_car_red_position_left) // is already left
+            {
+                return;
+            }
+
+            // turn left its in the right position
+        }
+        else // wants to go turn_right
+        {
+            if (x == default_car_red_position_right) // is already right
+            {
+                return;
+            }
+
+            // turn right its in the left position
+        }
+    }
+    else // car_blue
+    {
+        if (turn_left) // wants to go turn_left
+        {
+            if (x == default_car_blue_position_left) // is already left
+            {
+                return;
+            }
+
+            // turn left its in the right position
+        }
+        else // wants to go turn_right
+        {
+            if (x == default_car_blue_position_right) // is already right
+            {
+                return;
+            }
+
+            // turn right its in the left position
+        }
+    }
+}
+
+/*for(int i = 0; i < car_width; ++i)
+            {
+                draw_line(i, floor(i*cos(theta)), i + floor(car_height*cos(theta)), floor(i*cos(theta)) + floor(car_height*sin(theta)));
+            }
+
+
+for(int i = 0; i < car_width; ++i)
+            {
+                draw_line(i, floor(i*trig), i + floor(car_height*trig), floor(i*trig) + floor(car_height*trig));
+            }
+	    
+for(int i = 0; i < car_width; ++i)
+	{
+	draw_line(i, floor(i*cos(theta)), i + floor(car_height*cos(theta)), floor(i*cos(theta) + car_height*sin(theta)));
+	}
+*/
+
 
   //image 2 cars title: 141x48
   short int two_cars_title[] = {
