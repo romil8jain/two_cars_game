@@ -21,14 +21,20 @@ void clear_screen();
 void draw_background(int x_start, int x_end, int y_start, int y_end, short int colour);
 void draw_title();
 void draw_title_screen_instruction();
+void reset_title_screen_instruction();
 void draw_red_car(bool left_or_right);
 void draw_blue_car(bool left_or_right);
 void draw_blue_circle(int x1, int y1);
 void draw_blue_square(int x1, int y1);
 void draw_red_square(int x1, int y1);
 void draw_red_circle(int x1, int y1);
+void draw_score(int *score);
 void erase_red_car(bool red_left);
 void erase_blue_car(bool blue_left);
+void check_for_collison_red(bool red_left, position * red_squares);
+void check_for_collison_blue(bool blue_left, position * blue_squares);
+void get_points_red(bool red_left, position * red_circles, int* score);
+void get_points_blue(bool blue_left, position * blue_circles, int* score);
 void check_blue_bounds(position * blue_squares,position * blue_circles);
 void check_red_bounds(position * red_squares,position * red_circles);
 void erase_blue(position * blue_squares,position * blue_circles);
@@ -55,6 +61,9 @@ int leave_A_button = 0;
 int leave_D_button = 0;
 int move_red = 0;
 int move_blue = 0;
+int game_started = 0;
+
+bool game_over = true;
 
 
 int main(void) {
@@ -88,85 +97,104 @@ int main(void) {
     position blue_circles[4];
     position red_squares[4];
     position red_circles[4];
-    set_initial_positions(blue_squares, blue_circles, red_squares, red_circles);
 
     bool red_left = true;
     bool blue_left = false; 
     int red_erase_count = 0; //holds count to allow erasing in both front and back buffers
     int blue_erase_count = 0; //holds count to allow erasing in both front and back buffers
 
+    int wait_time_count = 0;
+    int wait_time_count_started = 0;
     int wait_time = 0;
+
+    int score = 0;
     //make sure to draw background once on both front and back buffers
     while (1)
-    {
-        if(wait_time <= 1){
-            draw_background(0, 320, 0, 240, 0x0824);
-            draw_title();
-            draw_title_screen_instruction();
-        }
-        else if(wait_time < 20){
-			plot_pixel(319, 239, 0x0824);
-		}
-        
-
-        if(wait_time == 20 || wait_time == 21){
-            draw_background(0, 320, 0, 240, 0x29af);
-        }
-        else if(wait_time > 21){
-            plot_pixel(319, 239, 0x29af);
+    {   
+        if(game_started == 2){
+            game_started = 0;
+            game_over = false;
         }
 
-        if(wait_time > 21 && wait_time % 80 == 0){
-            move_blue_random(true, blue_squares, blue_circles); 
+        if(game_over == true){
+            if(wait_time_count <= 1){
+                draw_background(0, 320, 0, 240, 0x0824);
+                draw_title();
+                draw_title_screen_instruction();
+                wait_time_count++;
+                set_initial_positions(blue_squares, blue_circles, red_squares, red_circles);
+                score = 0;
+            }
+            else{
+                plot_pixel(319, 239, 0x0824); //drawing last pixel for vsync bit
+            }
+            wait_time = 0;
+            wait_time_count_started = 0;
         }
 
-        if(wait_time > 21){
-            erase_blue(blue_squares, blue_circles);
+        else{
+            wait_time_count = 0;
+            if(wait_time_count_started <= 1){
+                draw_background(0, 320, 0, 240, 0x29af);
+                wait_time_count_started++;
+                reset_title_screen_instruction();
+            }
+            else{
+                plot_pixel(319, 239, 0x29af);
+            } //drawing last pixel for vsync bit
+
+            if(wait_time % 80 == 0){
+                move_blue_random(true, blue_squares, blue_circles); 
+            }
+
+            draw_score(&score);
+            erase_blue(blue_squares, blue_circles); //they only work on drawn squares and circles
             move_blue_random(false, blue_squares, blue_circles); 
-        }
 
-        if((wait_time-13) > 21 && (wait_time-13) % 80 == 0){
-            move_red_random(true, red_squares, red_circles); 
-        }
+            if((wait_time-13) % 80 == 0){
+                move_red_random(true, red_squares, red_circles); 
+            }
 
-        if((wait_time-13) > 21){
             erase_red(red_squares, red_circles);
             move_red_random(false, red_squares, red_circles); 
-        }
-        
-        if(move_red == 2){
-            move_red = 0;
-            erase_red_car(red_left);
-            red_left = !red_left;
-            red_erase_count++;
-        }
-        else if(red_erase_count == 1){
-            red_erase_count = 0;
-            erase_red_car(!red_left);
-        }
+            
+            if(move_red == 2){ //when it is 2, the keyboard key A has been released
+                move_red = 0;
+                erase_red_car(red_left);
+                red_left = !red_left;
+                red_erase_count++;
+            }
+            else if(red_erase_count == 1){
+                red_erase_count = 0;
+                erase_red_car(!red_left);
+            }
 
-        if(move_blue == 2){
-            move_blue = 0;
-            erase_blue_car(blue_left);
-            blue_left = !blue_left;
-            blue_erase_count++;
-        }
-        else if(blue_erase_count == 1) {
-            blue_erase_count = 0;
-            erase_blue_car(!blue_left);
-        }
+            if(move_blue == 2){//when it is 2, the keyboard key D has been released
+                move_blue = 0;
+                erase_blue_car(blue_left);
+                blue_left = !blue_left;
+                blue_erase_count++;
+            }
+            else if(blue_erase_count == 1) {
+                blue_erase_count = 0;
+                erase_blue_car(!blue_left);
+            }
 
-        //int repeat_clear_outside_bounds = CLEAR_0;
-        check_blue_bounds(blue_squares, blue_circles);
-        check_red_bounds(red_squares, red_circles);
+            check_for_collison_red(red_left, red_squares);
+            check_for_collison_blue(blue_left, blue_squares);
 
-        if(wait_time > 21){
+            get_points_red(red_left, red_circles, &score);
+            get_points_blue(blue_left, blue_circles, &score);
+
+            check_blue_bounds(blue_squares, blue_circles);
+            check_red_bounds(red_squares, red_circles);
+
             draw_red_car(red_left);
             draw_blue_car(blue_left);
+
+            wait_time++;
         }
 
-
-        wait_time++;
         wait_for_vsync(); // swap front and back buffers on VGA vertical sync
         pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
     }
@@ -194,6 +222,47 @@ void draw_title_screen_instruction(){
     *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x6C; x++;
     *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x61; x++;
     *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x79;
+}
+
+void reset_title_screen_instruction(){
+ volatile char * char_buffer_ptr = (char *) 0xC9000000;
+
+    int y = 33, x = 33;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20;
+}
+
+void draw_score(int *score){
+    volatile char * char_buffer_ptr = (char *) 0xC9000000;
+
+    int y = 1, x = 70;
+    char base = 0x30;
+
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x53; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x63; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x6F; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x72; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x65; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x3A; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = 0x20; x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = (base + ((*score)/10)); x++;
+    *(char*)(char_buffer_ptr + (y << 7) + (x)) = (base + ((*score)%10));
+    
 }
 
 void erase_blue(position * blue_squares,position * blue_circles){
@@ -245,6 +314,113 @@ void erase_blue_car(bool blue_left){
     }
     else{
         draw_background(262, 262+36, 150, 190, 0x29af);
+    }
+}
+
+void check_for_collison_red(bool red_left, position * red_squares){
+    int i = 0;
+    for(i = 0; i <4; i++){
+        if(((*(red_squares + i)).y_pos+32) >= 150 && ((*(red_squares + i)).y_pos+32) <= 190 && 
+            (*(red_squares + i)).x_pos == 25 &&  red_left == true){
+            game_over = true;
+        }
+        else if( ((*(red_squares + i)).y_pos+32) >= 150 && ((*(red_squares + i)).y_pos+32) <= 190 && 
+                (*(red_squares + i)).x_pos == 105 &&  red_left == false){
+            game_over = true;
+        }
+    }
+}
+
+void check_for_collison_blue(bool blue_left, position * blue_squares){
+    int i = 0;
+    for(i = 0; i <4; i++){
+        if(((*(blue_squares + i)).y_pos+32) >= 150 && ((*(blue_squares + i)).y_pos+32) <= 190 && 
+            (*(blue_squares + i)).x_pos == 185 &&  blue_left == true){
+            game_over = true;
+        }
+        else if(((*(blue_squares + i)).y_pos+32) >= 150 && ((*(blue_squares + i)).y_pos+32) <= 190 && 
+                (*(blue_squares + i)).x_pos == 265 &&  blue_left == false){
+            game_over = true;
+        }
+    }
+}
+
+int get_points_red_count = 0;
+int red_circle_to_erase = NO_POS;
+
+void get_points_red(bool red_left, position * red_circles, int* score){
+    int i = 0;
+    for(i = 0; i <4; i++){
+
+        if(get_points_red_count == 1 && red_circle_to_erase == i){
+            (*(red_circles + i)).x_pos = NO_POS; //circle doesnt exist now
+            (*(red_circles + i)).y_pos = NO_POS;
+            (*score)++;
+            get_points_red_count = 0;
+            red_circle_to_erase = NO_POS;
+        }
+
+
+        if((*(red_circles + i)).y_pos >= 150 && (*(red_circles + i)).y_pos <= 190 && 
+            (*(red_circles + i)).x_pos == 25 &&  red_left == true){
+
+            draw_background((*(red_circles + i)).x_pos, ((*(red_circles + i)).x_pos) + 30, 
+                                (*(red_circles + i)).y_pos, ((*(red_circles + i)).y_pos) + 32, 0x29af); //remove circle
+            get_points_red_count++;
+            red_circle_to_erase = i;
+        }
+
+        else if((*(red_circles + i)).y_pos >= 150 && (*(red_circles + i)).y_pos <= 190 && 
+                (*(red_circles + i)).x_pos == 105 &&  red_left == false){
+
+            draw_background((*(red_circles + i)).x_pos, ((*(red_circles + i)).x_pos) + 30, 
+                                (*(red_circles + i)).y_pos, ((*(red_circles + i)).y_pos) + 32, 0x29af); //remove circle
+            get_points_red_count++;     
+            red_circle_to_erase = i;
+        }
+
+        else if((*(red_circles + i)).y_pos > 190){
+            game_over = true;
+        }
+    }
+}
+
+int get_points_blue_count = 0;
+int blue_circle_to_erase = NO_POS;
+
+void get_points_blue(bool blue_left, position * blue_circles, int* score){
+    int i = 0;
+    for(i = 0; i <4; i++){
+
+        if(get_points_blue_count == 1 && blue_circle_to_erase == i){
+            (*(blue_circles + i)).x_pos = NO_POS; //circle doesnt exist now
+            (*(blue_circles + i)).y_pos = NO_POS;
+            (*score)++;
+            get_points_blue_count = 0;
+            blue_circle_to_erase = NO_POS;
+        }
+
+        else if((*(blue_circles + i)).y_pos >= 150 && (*(blue_circles + i)).y_pos <= 190 && 
+            (*(blue_circles + i)).x_pos == 185 &&  blue_left == true){
+
+            draw_background((*(blue_circles + i)).x_pos, ((*(blue_circles + i)).x_pos) + 30, 
+                                (*(blue_circles + i)).y_pos, ((*(blue_circles + i)).y_pos) + 32, 0x29af); //remove circle
+            get_points_blue_count++;
+            blue_circle_to_erase = i;
+        }
+
+        else if((*(blue_circles + i)).y_pos >= 150 && (*(blue_circles + i)).y_pos <= 190 && 
+                (*(blue_circles + i)).x_pos == 265 &&  blue_left == false){
+
+            draw_background((*(blue_circles + i)).x_pos, ((*(blue_circles + i)).x_pos) + 30, 
+                                (*(blue_circles + i)).y_pos, ((*(blue_circles + i)).y_pos) + 32, 0x29af); //remove circle
+            get_points_blue_count++;     
+            blue_circle_to_erase = i;
+        }
+
+        else if((*(blue_circles + i)).y_pos > 190){
+            game_over = true;
+        }
     }
 }
 
@@ -788,25 +964,15 @@ void PS2_ISR() {
         move_red++;
     }
 
-    // else if(press & (0xF0)){ //leave A
-    //     // if(leave_A_button == 1){
-    //     //     HEX_bits = 0b00111111;
-    //     //     move_red = 1;
-    //     //     leave_A_button = 0;
-    //     // }
-    // }
-
     if(press == (char)(0x23)){  //D
         move_blue++;
     }
 
-    // else if(press & (0xF0)){ //leave D
-    //     // if(leave_D_button == 1){
-    //     //     HEX_bits = 0b00000110;
-    //     //     move_blue = 1;
-    //     //     leave_D_button = 0;
-    //     // }
-    // }
+    if(press == (char)(0x4D)){  //P
+        game_started++;
+    }
+
+
     *(PS2_ptr+1) = 0XF;
     //*HEX3_HEX0_ptr = HEX_bits;
 }
