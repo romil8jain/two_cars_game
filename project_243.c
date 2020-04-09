@@ -2,21 +2,33 @@
 #include <stdlib.h>
 volatile int pixel_buffer_start; // global variable
 #define NO_POS -1
+#define CLEAR_0 0
+#define CLEAR_1 1
 
 typedef struct Position{
     int x_pos;
     int y_pos;
 } position;
 
+void disable_A9_interrupts(void);
+void set_A9_IRQ_stack(void);
+void config_GIC(void);
+void config_PS2(void);
+void enable_A9_interrupts(void);
+
 
 void clear_screen();
 void draw_background(int x_start, int x_end, int y_start, int y_end, short int colour);
 void draw_title();
 void draw_title_screen_instruction();
-void draw_red_car();
-void draw_blue_car();
+void draw_red_car(bool left_or_right);
+void draw_blue_car(bool left_or_right);
 void draw_blue_circle(int x1, int y1);
 void draw_blue_square(int x1, int y1);
+void draw_red_square(int x1, int y1);
+void draw_red_circle(int x1, int y1);
+void erase_red_car(bool red_left);
+void erase_blue_car(bool blue_left);
 void check_blue_bounds(position * blue_squares,position * blue_circles);
 void check_red_bounds(position * red_squares,position * red_circles);
 void erase_blue(position * blue_squares,position * blue_circles);
@@ -39,9 +51,19 @@ short int blue_square [1920];
 short int red_circle [1920];
 short int red_square [1920];
 
+int leave_A_button = 0;
+int leave_D_button = 0;
+int move_red = 0;
+int move_blue = 0;
 
-int main(void)
-{
+
+int main(void) {
+    disable_A9_interrupts(); // disable interrupts in the A9 processor
+    set_A9_IRQ_stack(); // initialize the stack pointer for IRQ mode
+    config_GIC(); // configure the general interrupt controller
+    config_PS2(); // configure pushbutton KEYs to generate interrupts
+    enable_A9_interrupts(); // enable interrupts in the A9 processor
+    
     volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
 
     // declare other variables(not shown)
@@ -68,6 +90,10 @@ int main(void)
     position red_circles[4];
     set_initial_positions(blue_squares, blue_circles, red_squares, red_circles);
 
+    bool red_left = true;
+    bool blue_left = false; 
+    int red_erase_count = 0; //holds count to allow erasing in both front and back buffers
+    int blue_erase_count = 0; //holds count to allow erasing in both front and back buffers
 
     int wait_time = 0;
     //make sure to draw background once on both front and back buffers
@@ -108,13 +134,35 @@ int main(void)
             move_red_random(false, red_squares, red_circles); 
         }
         
+        if(move_red == 2){
+            move_red = 0;
+            erase_red_car(red_left);
+            red_left = !red_left;
+            red_erase_count++;
+        }
+        else if(red_erase_count == 1){
+            red_erase_count = 0;
+            erase_red_car(!red_left);
+        }
+
+        if(move_blue == 2){
+            move_blue = 0;
+            erase_blue_car(blue_left);
+            blue_left = !blue_left;
+            blue_erase_count++;
+        }
+        else if(blue_erase_count == 1) {
+            blue_erase_count = 0;
+            erase_blue_car(!blue_left);
+        }
+
         //int repeat_clear_outside_bounds = CLEAR_0;
         check_blue_bounds(blue_squares, blue_circles);
         check_red_bounds(red_squares, red_circles);
 
         if(wait_time > 21){
-            draw_red_car();
-            draw_blue_car();
+            draw_red_car(red_left);
+            draw_blue_car(blue_left);
         }
 
 
@@ -123,6 +171,7 @@ int main(void)
         pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
     }
 }
+
 
 void draw_title_screen_instruction(){
      volatile char * char_buffer_ptr = (char *) 0xC9000000;
@@ -178,6 +227,24 @@ void erase_red(position * red_squares,position * red_circles){
             draw_background((*(red_circles + i)).x_pos, ((*(red_circles + i)).x_pos) + 30,
                             ((*(red_circles + i)).y_pos) - 2, ((*(red_circles + i)).y_pos) + 30, 0x29af);
         }
+    }
+}
+
+void erase_red_car(bool red_left){
+    if(red_left == true){
+        draw_background(22, 22+36, 150, 190, 0x29af);
+    }
+    else{
+        draw_background(102, 102+36, 150, 190, 0x29af);
+    }
+}
+
+void erase_blue_car(bool blue_left){
+    if(blue_left == true){
+        draw_background(182, 182+36, 150, 190, 0x29af);
+    }
+    else{
+        draw_background(262, 262+36, 150, 190, 0x29af);
     }
 }
 
@@ -447,20 +514,26 @@ void draw_background(int x_start, int x_end, int y_start, int y_end, short int c
     }
 }
 
-void draw_red_car(){
+void draw_red_car(bool left_or_right){
     int i = 0;
+    int x1 = 22;
+    if(!left_or_right)   
+        x1 = 102;
     for(int y = 150; y < 190; y++){
-        for (int x = 22; x < 58; x++){
+        for (int x = x1; x < (x1+36); x++){
             plot_pixel(x, y, (red_car[i] | red_car[i+1] << 8));
             i+=2;
         }
     }
 }
 
-void draw_blue_car(){
+void draw_blue_car(bool left_or_right){
     int i = 0;
+    int x1 = 182;
+    if(!left_or_right)   
+        x1 = 262;
     for(int y = 150; y < 190; y++){
-        for (int x = 262; x < 298; x++){
+        for (int x = x1; x < (x1+36); x++){
             plot_pixel(x, y, (blue_car[i] | blue_car[i+1] << 8));
             i+=2;
         }
@@ -576,98 +649,169 @@ void checkBounds(int x_box, int y_box, int *dx_box, int *dy_box){
     }
 }
 
-// //to check if the car can move any further left 
-// bool position_left(int x){
-// 	if(x==car_left)
-// 		return true;
-// 	else 
-// 		return false;
-// }
-// //to move the car right
-// void move_car_right(float dx, int *car){
-// 	if(position_left){
-// 		current_position=car_right;
-// 	}
-// 	else 
-// 		return();
-// }
-// //to move the car left
-// void move_car_left(float dx, int *car){
-// 	if(!position_left){
-// 		current_position=car_left;
-// 	}
-// 	else   
-// 		return();
-// }
-// //
-// int floor(const float input){
-// 	return int(input - input%1);
-// }
-// // 
-// void move_car()
-// {
-//     if (car_red)
-//     {
-//         if (turn_left) // wants to go turn_left
-//         {
-//             if (x == default_car_red_position_left) // is already left
-//             {
-//                 return;
-//             }
-
-//             // turn left its in the right position
-//         }
-//         else // wants to go turn_right
-//         {
-//             if (x == default_car_red_position_right) // is already right
-//             {
-//                 return;
-//             }
-
-//             // turn right its in the left position
-//         }
-//     }
-//     else // car_blue
-//     {
-//         if (turn_left) // wants to go turn_left
-//         {
-//             if (x == default_car_blue_position_left) // is already left
-//             {
-//                 return;
-//             }
-
-//             // turn left its in the right position
-//         }
-//         else // wants to go turn_right
-//         {
-//             if (x == default_car_blue_position_right) // is already right
-//             {
-//                 return;
-//             }
-
-//             // turn right its in the left position
-//         }
-//     }
-// }
-
-/*for(int i = 0; i < car_width; ++i)
-            {
-                draw_line(i, floor(i*cos(theta)), i + floor(car_height*cos(theta)), floor(i*cos(theta)) + floor(car_height*sin(theta)));
-            }
+/* setup the KEY interrupts in the FPGA */
+void config_PS2() {
+    volatile int * KEY_ptr = (int *) 0xFF200100; // pushbutton KEY base address
+    *(KEY_ptr + 1) = 0xF; // enable interrupts for the two KEYs
+}
 
 
-for(int i = 0; i < car_width; ++i)
-            {
-                draw_line(i, floor(i*trig), i + floor(car_height*trig), floor(i*trig) + floor(car_height*trig));
-            }
-	    
-for(int i = 0; i < car_width; ++i)
-	{
-	draw_line(i, floor(i*cos(theta)), i + floor(car_height*cos(theta)), floor(i*cos(theta) + car_height*sin(theta)));
-	}
+/* This file:
+* 1. defines exception vectors for the A9 processor
+* 2. provides code that sets the IRQ mode stack, and that dis/enables
+* interrupts
+* 3. provides code that initializes the generic interrupt controller
+*/
+void PS2_ISR(void);
+void config_interrupt(int, int);
+
+// Define the IRQ exception handler
+void __attribute__((interrupt)) __cs3_isr_irq(void) {
+    // Read the ICCIAR from the CPU Interface in the GIC
+    int interrupt_ID = *((int *)0xFFFEC10C);
+    if (interrupt_ID == 79) // check if interrupt is from the KEYs
+    PS2_ISR();
+    else
+    while (1); // if unexpected, then stay here
+    // Write to the End of Interrupt Register (ICCEOIR)
+    *((int *)0xFFFEC110) = interrupt_ID;
+}
+
+// Define the remaining exception handlers
+void __attribute__((interrupt)) __cs3_reset(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_undef(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_swi(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_pabort(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_dabort(void) {
+    while (1);
+}
+void __attribute__((interrupt)) __cs3_isr_fiq(void) {
+    while (1);
+}
+
+/*
+* Turn off interrupts in the ARM processor
 */
 
+void disable_A9_interrupts(void) {
+    int status = 0b11010011;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(status));
+}
+/*
+* Initialize the banked stack pointer register for IRQ mode
+*/
+void set_A9_IRQ_stack(void) {
+    int stack, mode;
+    stack = 0xFFFFFFFF - 7; // top of A9 onchip memory, aligned to 8 bytes
+    /* change processor to IRQ mode with interrupts disabled */
+    mode = 0b11010010;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(mode));
+    /* set banked stack pointer */
+    asm("mov sp, %[ps]" : : [ps] "r"(stack));
+    /* go back to SVC mode before executing subroutine return! */
+    mode = 0b11010011;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(mode));
+}
+/*
+* Turn on interrupts in the ARM processor
+*/
+void enable_A9_interrupts(void) {
+    int status = 0b01010011;
+    asm("msr cpsr, %[ps]" : : [ps] "r"(status));
+}
+/*
+* Configure the Generic Interrupt Controller (GIC)
+*/
+void config_GIC(void) {
+    config_interrupt (79, 1); // configure the FPGA KEYs interrupt (73)
+    // Set Interrupt Priority Mask Register (ICCPMR). Enable interrupts of all
+    // priorities
+    *((int *) 0xFFFEC104) = 0xFFFF;
+    // Set CPU Interface Control Register (ICCICR). Enable signaling of
+    // interrupts
+    *((int *) 0xFFFEC100) = 1;
+    // Configure the Distributor Control Register (ICDDCR) to send pending
+    // interrupts to CPUs
+    *((int *) 0xFFFED000) = 1;
+}
+/*
+* Configure Set Enable Registers (ICDISERn) and Interrupt Processor Target
+* Registers (ICDIPTRn). The default (reset) values are used for other registers
+* in the GIC.
+*/
+void config_interrupt(int N, int CPU_target) {
+    int reg_offset, index, value, address;
+    /* Configure the Interrupt Set-Enable Registers (ICDISERn).
+    * reg_offset = (integer_div(N / 32) * 4
+    * value = 1 << (N mod 32) */
+    reg_offset = (N >> 3) & 0xFFFFFFFC;
+    index = N & 0x1F;
+    value = 0x1 << index;
+    address = 0xFFFED100 + reg_offset;
+    /* Now that we know the register address and value, set the appropriate bit */
+    *(int *)address |= value;
+    /* Configure the Interrupt Processor Targets Register (ICDIPTRn)
+    * reg_offset = integer_div(N / 4) * 4
+    * index = N mod 4 */
+    reg_offset = (N & 0xFFFFFFFC);
+    index = N & 0x3;
+    address = 0xFFFED800 + reg_offset + index;
+    /* Now that we know the register address and value, write to (only) the
+    * appropriate byte */
+    *(char *)address = (char)CPU_target;
+}
 
+/********************************************************************
+* Pushbutton - Interrupt Service Routine
+*
+* This routine checks which KEY has been pressed. It writes to HEX0
+*******************************************************************/
+
+
+void PS2_ISR() {
+    /* KEY base address */
+    volatile int * PS2_ptr = (int *) 0xFF200100;
+    //volatile int * HEX3_HEX0_ptr = (int *) 0xFF200020;
+
+    char press;
+    press = *(PS2_ptr);
+
+    if(press == (char) (0x1C)){  //A
+        move_red++;
+    }
+
+    // else if(press & (0xF0)){ //leave A
+    //     // if(leave_A_button == 1){
+    //     //     HEX_bits = 0b00111111;
+    //     //     move_red = 1;
+    //     //     leave_A_button = 0;
+    //     // }
+    // }
+
+    if(press == (char)(0x23)){  //D
+        move_blue++;
+    }
+
+    // else if(press & (0xF0)){ //leave D
+    //     // if(leave_D_button == 1){
+    //     //     HEX_bits = 0b00000110;
+    //     //     move_blue = 1;
+    //     //     leave_D_button = 0;
+    //     // }
+    // }
+    *(PS2_ptr+1) = 0XF;
+    //*HEX3_HEX0_ptr = HEX_bits;
+}
+
+	
   //image 2 cars title: 141x48
   short int two_cars_title[] = {
   0x42, 0x08, 0x24, 0x08, 0x42, 0x08, 0x25, 0x08, 0x62, 0x00, 0x23, 0x10, 0x43, 0x08, 0x83, 0x18, 0xcd, 0x5a, 0xaf, 0x7b, 0xf1, 0x83, 0xaf, 0x7b, 0xf1, 0x83, 0xaf, 0x7b, 0xf1, 0x7b, 0xaf, 0x83, 0xf1, 0x7b, 0xaf, 0x83, 0x2a, 0x42, 0x42, 0x10, 0x44, 0x00, 0x22, 0x00, 0x64, 0x10, 0x22, 0x08, 0x44, 0x08, 0x22, 0x08, 0x65, 0x08, 0x22, 0x08, 0x63, 0x08, 0x23, 0x08, 0x82, 0x08, 0x24, 0x08, 0x42, 0x00, 0x64, 0x10, 0x42, 0x00, 0x24, 0x00, 0x82, 0x10, 0x24, 0x00, 0x22, 0x00, 0x84, 0x08, 0x62, 0x08, 0xa4, 0x10, 0xe4, 0x18, 0xe5, 0x18, 0xe4, 0x18, 0xe5, 0x18, 0xe4, 0x18, 0xe6, 0x18, 0xe3, 0x10, 0xe6, 0x10, 0xc3, 0x18, 0x64, 0x08, 0x62, 0x08, 0x64, 0x08, 0x62, 0x08, 0x44, 0x08, 0x22, 0x08, 0x44, 0x08, 0x22, 0x08, 0x64, 0x08, 0x22, 0x08, 0x84, 0x08, 0x22, 0x08, 0x25, 0x08, 0x82, 0x08, 0x23, 0x00, 0x45, 0x00, 0x42, 0x10, 0x03, 0x00, 0x28, 0x19, 0xe4, 0x18, 0x07, 0x19, 0x43, 0x08, 0x39, 0xce, 0x83, 0x08, 0x62, 0x08, 0x44, 0x08, 0x22, 0x08, 0x44, 0x08, 0x22, 0x08, 0x84, 0x08, 0x22, 0x08, 0x24, 0x08, 0x82, 0x00, 0x64, 0x10, 0x42, 0x08, 0x24, 0x08, 0x82, 0x08, 0x64, 0x08, 0x62, 0x08, 0x67, 0x29, 0x26, 0x29, 0x27, 0x29, 0x66, 0x21, 0x27, 0x21, 0x25, 0x29, 0x49, 0x21, 0x06, 0x21, 0x86, 0x29, 0x07, 0x29, 0x25, 0x29, 0x47, 0x29, 0x06, 0x29, 0x47, 0x29, 0x25, 0x29, 0x27, 0x21, 0x61, 0x08, 0x44, 0x08, 0x22, 0x08, 0x84, 0x08, 0x62, 0x08, 0x44, 0x00, 0x22, 0x10, 0x84, 0x08, 0x62, 0x08, 0x64, 0x08, 0x42, 0x08, 0x25, 0x08, 0x82, 0x08, 0x23, 0x08, 0x23, 0x08, 0x82, 0x08, 0x65, 0x08, 0x45, 0x29, 0x29, 0x42, 0x2a, 0x42, 0x28, 0x42, 0x2a, 0x3a, 0x29, 0x3a, 0x2a, 0x42, 0x28, 0x42, 0x2a, 0x42, 0x28, 0x42, 0xc5, 0x18, 0x82, 0x08, 0x64, 0x08, 0x42, 0x08, 0x24, 0x08, 0x82, 0x00, 0x64, 0x00, 0x82, 0x10, 
@@ -842,7 +986,7 @@ for(int i = 0; i < car_width; ++i)
   0xaf, 0x21, 0x8f, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0x90, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0x90, 0x29, 0x8f, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0x90, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 
   };
   
-  short int blue_square[]{
+  short int blue_square[]={
   0xaf, 0x29, 0x8f, 0x21, 0xcf, 0x29, 0x6f, 0x21, 0xcf, 0x29, 0x6f, 0x21, 0xcf, 0x29, 0x6f, 0x29, 0xcf, 0x29, 0x6f, 0x21, 0xcf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x29, 0xaf, 0x29, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xcf, 0x29, 0x6f, 0x21, 
   0x90, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0xb0, 0x29, 0x10, 0x1a, 0x71, 0x22, 0x51, 0x1a, 0x71, 0x22, 0x51, 0x22, 0x71, 0x22, 0x51, 0x22, 0x71, 0x22, 0x51, 0x1a, 0x71, 0x22, 0x51, 0x1a, 0x71, 0x22, 0x51, 0x22, 0x71, 0x22, 0x51, 0x22, 0x71, 0x22, 0x10, 0x22, 0xb0, 0x21, 0x8f, 0x21, 0xaf, 0x29, 0x8f, 0x21, 0x90, 0x29, 0x8f, 0x21, 0xaf, 0x29, 
   0xaf, 0x29, 0x8f, 0x21, 0xaf, 0x29, 0xaf, 0x21, 0x18, 0x05, 0x78, 0x05, 0x58, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x78, 0x05, 0x58, 0x05, 0x17, 0x05, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x29, 0xaf, 0x21, 0x8f, 0x21, 
