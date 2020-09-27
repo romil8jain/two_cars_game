@@ -1,11 +1,10 @@
 # ECE243
 
-Brief Description of 2 cars game
-
-
 
 The code is written for ARM Cortex A9 processor and can be run on CPUlator website:
 	https://cpulator.01xz.net/?sys=arm-de1soc&d_audio=48000
+
+Instructions to play:
 
 Select C code as language. Scroll down in settings and disable device specific warnings. Paste the code into the editor and press compile and load. Then press continue to run the application.
 
