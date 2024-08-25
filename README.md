@@ -1,4 +1,4 @@
-# ECE243
+# Two Cars Game
 
 
 The code is written for ARM Cortex A9 processor and can be run on CPUlator website:
